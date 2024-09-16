@@ -1,8 +1,11 @@
 package com.example.springbatch;
 
 import com.zaxxer.hikari.HikariDataSource;
+import jakarta.persistence.EntityManagerFactory;
+import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
+import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
@@ -19,9 +22,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.PropertySource;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.WritableResource;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.jdbc.support.JdbcTransactionManager;
 import org.springframework.orm.jpa.JpaTransactionManager;
+import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
+import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 import org.springframework.oxm.Unmarshaller;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -32,6 +35,7 @@ import javax.sql.DataSource;
 @EnableBatchProcessing
 public class TemperatureSensorRootConfiguration {
 
+
     @Value("classpath:input/HTE2NP.txt")
     private Resource rawDailyInputResource;
 
@@ -40,6 +44,28 @@ public class TemperatureSensorRootConfiguration {
 
     @Value("file:HTE2NP-anomalies.csv")
     private WritableResource anomalyDataResource;
+
+    @Value("${spring.datasource.driver-class-name}")
+    private String driverClassName;
+
+    @Value("${spring.datasource.url}")
+    private String url;
+
+    @Value("${spring.datasource.username}")
+    private String username;
+
+    @Value("${spring.datasource.password}")
+    private String password;
+
+    @Bean
+    public Job temperatureSensorJob(JobRepository jobRepository,
+                                    @Qualifier("aggregateSensorStep") Step aggregateSensorStep,
+                                    @Qualifier("reportAnomaliesStep") Step reportAnomaliesStep) {
+        return new JobBuilder("temperatureSensorJob", jobRepository)
+                .start(aggregateSensorStep)
+                .next(reportAnomaliesStep)
+                .build();
+    }
 
     @Bean
     @Qualifier("aggregateSensorStep")
@@ -80,31 +106,37 @@ public class TemperatureSensorRootConfiguration {
                         .resource(anomalyDataResource)
                         .delimited()
                         .delimiter(",")
-                        .names(new String[] {"date", "type", "value"})
+                        .names(new String[]{"date", "type", "value"})
                         .build()
                 )
                 .build();
     }
 
     @Bean
-    public DataSource dataSource(@Value("${spring.datasource.driver-class-name}") String driverClassName,
-                                 @Value("${spring.datasource.url}") String url,
-                                 @Value("${spring.datasource.username}") String username,
-                                 @Value("${spring.datasource.password}") String password) {
+    public DataSource dataSource() {
         HikariDataSource dataSource = new HikariDataSource();
         dataSource.setDriverClassName(driverClassName);
         dataSource.setJdbcUrl(url);
         dataSource.setUsername(username);
         dataSource.setPassword(password);
-
         return dataSource;
     }
 
     @Bean
-    public PlatformTransactionManager transactionManager(DataSource dataSource) {
+    public PlatformTransactionManager transactionManager(EntityManagerFactory entityManagerFactory) {
         JpaTransactionManager transactionManager = new JpaTransactionManager();
-        transactionManager.setDataSource(dataSource);
+        transactionManager.setEntityManagerFactory(entityManagerFactory);
         return transactionManager;
+    }
+
+
+    @Bean
+    public LocalContainerEntityManagerFactoryBean entityManagerFactory(DataSource dataSource) {
+        LocalContainerEntityManagerFactoryBean entityManagerFactory = new LocalContainerEntityManagerFactoryBean();
+        entityManagerFactory.setDataSource(dataSource);
+        entityManagerFactory.setJpaVendorAdapter(new HibernateJpaVendorAdapter());
+        entityManagerFactory.setPackagesToScan("com.example.springbatch");
+        return entityManagerFactory;
     }
 
     @Bean
@@ -118,7 +150,6 @@ public class TemperatureSensorRootConfiguration {
     public BatchProperties batchProperties() {
         BatchProperties properties = new BatchProperties();
         properties.getJdbc().setInitializeSchema(DatabaseInitializationMode.ALWAYS);
-        properties.getJdbc().setSchema("classpath:schema-postgresql.sql");
         return properties;
     }
 }
