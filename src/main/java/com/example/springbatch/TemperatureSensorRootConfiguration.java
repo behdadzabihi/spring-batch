@@ -1,5 +1,6 @@
 package com.example.springbatch;
 
+import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.repository.JobRepository;
@@ -20,6 +21,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.WritableResource;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.support.JdbcTransactionManager;
+import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.oxm.Unmarshaller;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -89,9 +91,9 @@ public class TemperatureSensorRootConfiguration {
                                  @Value("${spring.datasource.url}") String url,
                                  @Value("${spring.datasource.username}") String username,
                                  @Value("${spring.datasource.password}") String password) {
-        DriverManagerDataSource dataSource = new DriverManagerDataSource();
+        HikariDataSource dataSource = new HikariDataSource();
         dataSource.setDriverClassName(driverClassName);
-        dataSource.setUrl(url);
+        dataSource.setJdbcUrl(url);
         dataSource.setUsername(username);
         dataSource.setPassword(password);
 
@@ -100,7 +102,7 @@ public class TemperatureSensorRootConfiguration {
 
     @Bean
     public PlatformTransactionManager transactionManager(DataSource dataSource) {
-        JdbcTransactionManager transactionManager = new JdbcTransactionManager();
+        JpaTransactionManager transactionManager = new JpaTransactionManager();
         transactionManager.setDataSource(dataSource);
         return transactionManager;
     }
@@ -111,10 +113,12 @@ public class TemperatureSensorRootConfiguration {
         return new BatchDataSourceScriptDatabaseInitializer(dataSource, properties.getJdbc());
     }
 
+
     @Bean
-    public BatchProperties batchProperties(@Value("${batch.db.initialize-schema}") DatabaseInitializationMode initializationMode) {
+    public BatchProperties batchProperties() {
         BatchProperties properties = new BatchProperties();
-        properties.getJdbc().setInitializeSchema(initializationMode);
+        properties.getJdbc().setInitializeSchema(DatabaseInitializationMode.ALWAYS);
+        properties.getJdbc().setSchema("classpath:schema-postgresql.sql");
         return properties;
     }
 }
